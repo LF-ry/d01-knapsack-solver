@@ -14,7 +14,7 @@ d01-knapsack-solver/
 三、运行环境与依赖
   1、运行环境
   （1）操作系统：Windows 11
-  （2）Python 版本：3.8 及以上（推荐 3.9-3.11 版本，稳定性更佳）
+  （2）Python 版本：3.8 及以上
   2、依赖库说明
   （1）基础运行无需额外依赖（依赖 Python 标准库：tkinter、time、os）
   （2）若需导出 Excel 格式结果，需安装以下第三方库：pip install pandas openpyxl
