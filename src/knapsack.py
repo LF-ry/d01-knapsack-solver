@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-D{0-1}背包问题求解程序
+D{0-1}背包问题求解
 """
 
 import tkinter as tk
