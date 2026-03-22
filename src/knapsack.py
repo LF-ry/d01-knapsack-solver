@@ -384,7 +384,7 @@ class KnapsackGUI:
         ResultExporter.export_result(self.result_data, file_type)
 
 
-# ===================== 程序入口 =====================
+# ===================== 程序入口 ====================
 if __name__ == "__main__":
     # 创建TKinter根窗口
     root = tk.Tk()
