@@ -1,394 +1,309 @@
 # -*- coding: utf-8 -*-
-"""
-D{0-1}背包问题求解程序
-核心功能：
-1. 读取自定义格式的背包数据文件
-2. 按第三项物品的价值/重量比排序物品组
-3. 动态规划(DP)求解0-1背包最优解
-4. 导出求解结果为TXT/Excel格式
-5. 提供简单的TKinter图形界面交互
-"""
+# 0-1分组背包问题求解器
+# 界面布局完全匹配需求，功能完整：读取、排序、求解、导出、绘图
 
+# 导入GUI库tkinter
 import tkinter as tk
-from tkinter import filedialog, messagebox  # GUI文件选择和消息提示
-import time  # 计算求解耗时
-import os  # 文件路径校验
+# 文件选择、消息提示、滚动文本框
+from tkinter import filedialog, messagebox, scrolledtext
+import turtle
 
-# ===================== 全局常量定义 =====================
-MAX_CAPACITY_DEFAULT = 100  # 默认背包最大容量
-RESULT_COLUMNS = ['总容量', '最大价值', '求解时间(秒)', '选择方案']  # 结果导出列名
+# 默认背包容量（未读取文件时使用）
+MAX_CAPACITY_DEFAULT = 100
 
+# ===================== 数据加载模块 =====================
+# 功能：从txt文件读取背包容量和物品组数据
+def load_data(filepath):
+    try:
+        # 以UTF-8编码打开数据文件
+        with open(filepath, "r", encoding="utf-8") as f:
+            lines = [line.strip() for line in f if line.strip()]
 
-class DataLoader:
-    """
-    数据加载器类
-    负责从文本文件中读取背包问题的输入数据，格式要求：
-    - 第一行：背包总容量（整数）
-    - 后续每行：6个整数，代表一组3个物品的(重量,价值)，格式为 w1 v1 w2 v2 w3 v3
-    """
+        # 第一行 = 背包总容量
+        cap = int(lines[0])
+        groups = []
 
-    @staticmethod
-    def load_data(file_path):
-        """
-        从指定路径读取背包数据
-        :param file_path: 数据文件路径（str）
-        :return: (capacity, groups) 或 (None, None)
-                 capacity: 背包总容量（int）
-                 groups: 物品组列表，每个元素为[(w1,v1), (w2,v2), (w3,v3)]
-        """
-        try:
-            # 读取文件并过滤空行、去除首尾空格
-            with open(file_path, 'r', encoding='utf-8') as f:
-                lines = [line.strip() for line in f.readlines() if line.strip()]
+        # 逐行解析物品组（每组3个物品，共6个数值：w1 v1 w2 v2 w3 v3）
+        for line in lines[1:]:
+            nums = list(map(int, line.split()))
+            g = [(nums[0], nums[1]), (nums[2], nums[3]), (nums[4], nums[5])]
+            groups.append(g)
 
-            # 解析背包容量（第一行）
-            capacity = int(lines[0])
+        return cap, groups
 
-            # 解析物品组数据（后续行）
-            groups = []
-            for line_num, line in enumerate(lines[1:], start=2):  # 行号从2开始（便于定位错误）
-                parts = list(map(int, line.split()))
-                # 校验每行数据格式（必须6个数字）
-                if len(parts) != 6:
-                    raise ValueError(f"第{line_num}行数据格式错误：{line}（需6个数字，实际{len(parts)}个）")
-                # 组装为3个物品的元组列表
-                group = [(parts[0], parts[1]), (parts[2], parts[3]), (parts[4], parts[5])]
-                groups.append(group)
+    # 异常处理：文件格式错误、读取失败
+    except Exception as e:
+        print(f"加载错误: {e}")
+        return None, None
 
-            return capacity, groups
+# ===================== 背包算法模块 =====================
+# 排序规则：按每组第三个物品的【价值/重量比】降序排序
+def sort_groups(groups):
+    def ratio(g):
+        w, v = g[2]
+        return v / w if w != 0 else 999  # 避免除零错误
+    return sorted(groups, key=ratio, reverse=True)
 
-        except ValueError as e:
-            # 数据格式错误（非数字、数量不符）
-            messagebox.showerror("读取失败", f"数据格式错误：{str(e)}")
-            return None, None
-        except FileNotFoundError:
-            # 文件不存在
-            messagebox.showerror("读取失败", f"文件不存在：{file_path}")
-            return None, None
-        except Exception as e:
-            # 其他未知错误
-            messagebox.showerror("读取失败", f"数据文件读取错误：{str(e)}")
-            return None, None
+# 动态规划求解0-1分组背包（每组只能选一个物品）
+def solve_knapsack(capacity, groups):
+    n = len(groups)
+    # dp[w] 表示容量w时的最大价值
+    dp = [0] * (capacity + 1)
+    # path[w] 记录每个容量选择了哪个物品（用于回溯方案）
+    path = [None] * (capacity + 1)
 
+    # 遍历每一组
+    for i in range(n):
+        (w1, v1), (w2, v2), (w3, v3) = groups[i]
+        # 逆序遍历容量，保证每个物品只选一次
+        for w in range(capacity, -1, -1):
+            # 尝试选组内第一个物品
+            if w >= w1 and dp[w - w1] + v1 > dp[w]:
+                dp[w] = dp[w - w1] + v1
+                path[w] = (i, 0)
+            # 尝试选组内第二个物品
+            if w >= w2 and dp[w - w2] + v2 > dp[w]:
+                dp[w] = dp[w - w2] + v2
+                path[w] = (i, 1)
+            # 尝试选组内第三个物品
+            if w >= w3 and dp[w - w3] + v3 > dp[w]:
+                dp[w] = dp[w - w3] + v3
+                path[w] = (i, 2)
 
-class KnapsackSolver:
-    """
-    背包问题求解器类
-    核心算法：动态规划(DP)求解0-1背包问题
-    辅助功能：按第三项物品的价值/重量比排序物品组
-    """
+    # 回溯：从最大容量倒推选中的物品方案
+    selected = []
+    cur = capacity
+    while cur > 0 and path[cur] is not None:
+        g, idx = path[cur]
+        selected.append((g + 1, idx + 1))  # 转为从1开始的编号
+        cur -= groups[g][idx][0]
 
-    @staticmethod
-    def sort_by_third_ratio(groups):
-        """
-        按每组第三个物品的价值/重量比降序排序物品组
-        :param groups: 原始物品组列表
-        :return: 排序后的物品组列表
-        """
-        try:
-            # 定义排序键：第三个物品的价值/重量比（避免除零错误）
-            def get_ratio(group):
-                w, v = group[2]  # 取第三个物品
-                return v / w if w != 0 else float('inf')  # 重量为0时比值设为无穷大
+    # 返回最大价值与选中物品列表
+    return dp[capacity], selected
 
-            # 降序排序
-            sorted_groups = sorted(groups, key=get_ratio, reverse=True)
-            return sorted_groups
+# ===================== 结果导出模块 =====================
+# 导出为TXT文件
+def export_txt(result, filepath):
+    try:
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(f"背包容量：{result['cap']}\n")
+            f.write(f"最大价值：{result['max_val']}\n")
+            f.write(f"求解时间：{result['time']} 秒\n")
+            f.write("选中物品：\n")
+            for g, idx in result['selected']:
+                f.write(f"第{g}组 第{idx}个\n")
+        return True
+    except:
+        return False
 
-        except Exception as e:
-            messagebox.showerror("排序失败", f"排序出错：{str(e)}")
-            return groups  # 排序失败返回原数据
+# 导出为Excel文件（需要pandas库）
+def export_excel(result, filepath):
+    try:
+        import pandas as pd
+        df = pd.DataFrame([{
+            "背包容量": result['cap'],
+            "最大价值": result['max_val'],
+            "求解时间(秒)": result['time'],
+            "选中物品": "; ".join([f"第{g}组第{idx}个" for g, idx in result['selected']])
+        }])
+        df.to_excel(filepath, index=False)
+        return True
+    except:
+        return False
 
-    @staticmethod
-    def solve_dp(capacity, groups):
-        """
-        动态规划求解0-1背包最优解
-        :param capacity: 背包总容量（int）
-        :param groups: 物品组列表（已排序）
-        :return: (max_value, selected_str, solve_time)
-                 max_value: 最大价值（int）
-                 selected_str: 选择方案字符串（如"第1组第2个；第3组第1个"）
-                 solve_time: 求解耗时（秒，保留6位小数）
-        """
-        # 记录求解开始时间
-        start_time = time.time()
+# ===================== 散点图绘图模块 =====================
+# 使用turtle绘制重量-价值散点图
+def draw_scatter(groups):
+    if not groups:
+        messagebox.showwarning("提示", "请先加载数据")
+        return
 
-        # 初始化DP表和路径记录表
-        n = len(groups)  # 物品组数量
-        # dp[i][w]：前i个物品组，背包容量为w时的最大价值
-        dp = [[0] * (capacity + 1) for _ in range(n + 1)]
-        # path[i][w]：记录选择路径，格式为(物品组索引, 物品索引)
-        path = [[None] * (capacity + 1) for _ in range(n + 1)]
+    # 收集所有点，确定坐标范围
+    points = []
+    max_w = 0
+    max_v = 0
+    for g in groups:
+        for (w, v) in g:
+            points.append((w, v))
+            if w > max_w: max_w = w
+            if v > max_v: max_v = v
 
-        try:
-            # 填充DP表
-            for i in range(1, n + 1):
-                # 获取当前物品组的3个物品
-                item1, item2, item3 = groups[i - 1]
-                w1, v1 = item1
-                w2, v2 = item2
-                w3, v3 = item3
+    if not points:
+        messagebox.showwarning("提示", "无物品数据可绘图")
+        return
 
-                # 遍历所有可能的背包容量
-                for w in range(1, capacity + 1):
-                    # 初始值：不选当前物品组
-                    dp[i][w] = dp[i - 1][w]
+    # 初始化绘图窗口
+    screen = turtle.Screen()
+    screen.title("重量-价值散点图")
+    screen.setup(width=800, height=600)
+    screen.setworldcoordinates(-10, -10, max_w + 10, max_v + 10)
 
-                    # 尝试选第一个物品
-                    if w >= w1 and dp[i - 1][w - w1] + v1 > dp[i][w]:
-                        dp[i][w] = dp[i - 1][w - w1] + v1
-                        path[i][w] = (i - 1, 0)  # 0代表第一个物品
+    # 画笔设置
+    t = turtle.Turtle()
+    t.speed(0)
+    t.hideturtle()
+    colors = ["red", "blue", "green", "orange", "purple", "cyan"]
 
-                    # 尝试选第二个物品
-                    if w >= w2 and dp[i - 1][w - w2] + v2 > dp[i][w]:
-                        dp[i][w] = dp[i - 1][w - w2] + v2
-                        path[i][w] = (i - 1, 1)  # 1代表第二个物品
+    # 绘制坐标轴
+    t.penup()
+    t.goto(0, 0)
+    t.pendown()
+    t.goto(max_w + 5, 0)    # X轴（重量）
+    t.penup()
+    t.goto(0, 0)
+    t.pendown()
+    t.goto(0, max_v + 5)    # Y轴（价值）
 
-                    # 尝试选第三个物品
-                    if w >= w3 and dp[i - 1][w - w3] + v3 > dp[i][w]:
-                        dp[i][w] = dp[i - 1][w - w3] + v3
-                        path[i][w] = (i - 1, 2)  # 2代表第三个物品
+    # 坐标轴标注
+    t.penup()
+    t.goto(max_w + 5, -5)
+    t.write("重量", font=("Arial", 12, "normal"))
+    t.goto(-5, max_v + 5)
+    t.write("价值", font=("Arial", 12, "normal"))
 
-            # 回溯路径，获取选择方案
-            selected = []
-            current_w = capacity  # 从最大容量开始回溯
-            for i in range(n, 0, -1):
-                if path[i][current_w] is not None:
-                    group_idx, item_idx = path[i][current_w]
-                    # 转换为人类可读的序号（从1开始）
-                    selected.append((group_idx + 1, item_idx + 1))
-                    # 减去选中物品的重量
-                    current_w -= groups[group_idx][item_idx][0]
+    # 绘制每个物品的散点
+    for group_idx, group in enumerate(groups):
+        color = colors[group_idx % len(colors)]
+        t.pencolor(color)
+        t.fillcolor(color)
+        for item_idx, (w, v) in enumerate(group):
+            t.penup()
+            t.goto(w, v)
+            t.pendown()
+            t.begin_fill()
+            t.circle(5)        # 画圆点
+            t.end_fill()
+            t.penup()
+            t.goto(w + 2, v + 2)
+            t.write(f"{group_idx+1}-{item_idx+1}", font=("Arial", 10, "normal"))
 
-            # 计算求解耗时
-            solve_time = round(time.time() - start_time, 6)
+    messagebox.showinfo("成功", "散点图已打开，关闭窗口后继续操作")
+    screen.mainloop()
 
-            # 格式化选择方案
-            selected = sorted(selected, key=lambda x: x[0])  # 按物品组序号排序
-            selected_str = "; ".join([f"第{g}组第{i}个" for g, i in selected]) or "无"
+# ===================== GUI主界面 =====================
+# 主窗口类
+class KnapsackApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("D{0-1}背包问题求解器")  # 窗口标题
+        self.geometry("1200x800")          # 窗口大小
+        self.file_path = tk.StringVar()    # 文件路径变量
+        self.capacity = 0                  # 背包容量
+        self.groups = []                   # 物品组
+        self.result = None                 # 求解结果
+        self.create_widgets()              # 创建界面组件
 
-            return dp[n][capacity], selected_str, solve_time
+    # 创建所有GUI组件
+    def create_widgets(self):
+        # 1. 数据文件选择行
+        frame_file = tk.Frame(self)
+        frame_file.pack(pady=10, anchor="w", padx=10)
+        tk.Label(frame_file, text="数据文件：", font=("微软雅黑", 14)).pack(side=tk.LEFT)
+        tk.Entry(frame_file, textvariable=self.file_path, width=80, font=("微软雅黑", 12)).pack(side=tk.LEFT, padx=5)
+        tk.Button(frame_file, text="选择文件", font=("微软雅黑", 12), command=self.select_file).pack(side=tk.LEFT)
 
-        except Exception as e:
-            messagebox.showerror("求解失败", f"动态规划求解出错：{str(e)}")
-            return 0, "", 0
+        # 2. 第一排功能按钮
+        frame_btn1 = tk.Frame(self)
+        frame_btn1.pack(pady=5, anchor="w", padx=10)
+        tk.Button(frame_btn1, text="读取数据", font=("微软雅黑", 14), width=15, command=self.load_data).pack(side=tk.LEFT, padx=10)
+        tk.Button(frame_btn1, text="排序物品组", font=("微软雅黑", 14), width=15, command=self.sort_groups).pack(side=tk.LEFT, padx=10)
+        tk.Button(frame_btn1, text="求解最优解", font=("微软雅黑", 14), width=15, command=self.solve).pack(side=tk.LEFT, padx=10)
 
+        # 3. 第二排功能按钮
+        frame_btn2 = tk.Frame(self)
+        frame_btn2.pack(pady=5, anchor="w", padx=10)
+        tk.Button(frame_btn2, text="导出为TXT", font=("微软雅黑", 14), width=15, command=self.export_txt).pack(side=tk.LEFT, padx=10)
+        tk.Button(frame_btn2, text="导出为Excel", font=("微软雅黑", 14), width=15, command=self.export_excel).pack(side=tk.LEFT, padx=10)
+        tk.Button(frame_btn2, text="绘制散点图", font=("微软雅黑", 14), width=15, command=self.draw_plot).pack(side=tk.LEFT, padx=10)
 
-class ResultExporter:
-    """
-    结果导出器类
-    支持将求解结果导出为TXT或Excel格式
-    """
+        # 4. 求解结果显示区域
+        tk.Label(self, text="求解结果：", font=("微软雅黑", 16)).pack(pady=5, anchor="w", padx=10)
+        self.result_box = scrolledtext.ScrolledText(self, font=("微软雅黑", 12), height=25)
+        self.result_box.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
 
-    @staticmethod
-    def export_result(result_data, file_type='txt'):
-        """
-        导出求解结果
-        :param result_data: 结果字典，包含capacity/max_value/solve_time/selected
-        :param file_type: 导出类型，'txt'或'excel'
-        :return: 导出成功返回True，失败返回False
-        """
-        try:
-            # 确定文件扩展名
-            file_ext = '.txt' if file_type == 'txt' else '.xlsx'
+    # 选择数据文件
+    def select_file(self):
+        path = filedialog.askopenfilename(filetypes=[("文本文件", "*.txt")])
+        if path:
+            self.file_path.set(path)
 
-            # 弹出保存文件对话框
-            save_path = filedialog.asksaveasfilename(
-                defaultextension=file_ext,
-                filetypes=[(f"{file_type.upper()}文件", f"*{file_ext}"), ("所有文件", "*.*")]
-            )
-
-            # 用户取消保存
-            if not save_path:
-                return False
-
-            # 导出为TXT格式
-            if file_type == 'txt':
-                with open(save_path, 'w', encoding='utf-8') as f:
-                    f.write("D{0-1}背包问题求解结果\n")
-                    f.write("=" * 30 + "\n")
-                    f.write(f"背包总容量：{result_data['capacity']}\n")
-                    f.write(f"最大价值：{result_data['max_value']}\n")
-                    f.write(f"求解时间：{result_data['solve_time']} 秒\n")
-                    f.write(f"选择方案：{result_data['selected']}\n")
-
-            # 导出为Excel格式（需安装pandas和openpyxl）
-            else:
-                # 延迟导入（避免未安装时程序启动失败）
-                import pandas as pd
-                # 构造DataFrame
-                df = pd.DataFrame([{
-                    '背包总容量': result_data['capacity'],
-                    '最大价值': result_data['max_value'],
-                    '求解时间(秒)': result_data['solve_time'],
-                    '选择方案': result_data['selected']
-                }])
-                # 写入Excel文件（不保留索引）
-                df.to_excel(save_path, index=False)
-
-            messagebox.showinfo("导出成功", f"结果已保存至：{save_path}")
-            return True
-
-        except ImportError:
-            # 缺少Excel导出依赖
-            messagebox.showerror("导出失败", "导出Excel需安装pandas和openpyxl：\npip install pandas openpyxl")
-            return False
-        except Exception as e:
-            messagebox.showerror("导出失败", f"结果导出出错：{str(e)}")
-            return False
-
-
-class KnapsackGUI:
-    """
-    主界面类
-    负责创建TKinter图形界面，处理用户交互逻辑
-    """
-
-    def __init__(self, root):
-        """
-        初始化界面
-        :param root: TKinter根窗口对象
-        """
-        self.root = root
-        self.root.title("D{0-1}背包问题求解器")
-        self.root.geometry("800x500")  # 窗口大小
-
-        # 定义界面变量
-        self.file_path = tk.StringVar()  # 选中的数据文件路径
-        self.capacity = tk.IntVar(value=MAX_CAPACITY_DEFAULT)  # 背包容量
-        self.groups = None  # 加载的物品组数据
-        self.result_data = None  # 求解结果
-
-        # 创建界面组件
-        self._create_widgets()
-
-    def _create_widgets(self):
-        """创建所有界面组件（私有方法）"""
-        # ========== 1. 文件选择区域 ==========
-        frame_file = tk.Frame(self.root, padx=10, pady=10)
-        frame_file.pack(fill=tk.X)
-        tk.Label(frame_file, text="数据文件：", font=("Arial", 12)).pack(side=tk.LEFT)
-        # 文件路径输入框
-        tk.Entry(frame_file, textvariable=self.file_path, width=60, font=("Arial", 12)).pack(side=tk.LEFT, padx=5)
-        # 选择文件按钮
-        tk.Button(frame_file, text="选择文件", command=self._select_file, font=("Arial", 12)).pack(side=tk.LEFT)
-
-        # ========== 2. 功能按钮区域 ==========
-        frame_buttons = tk.Frame(self.root, padx=10, pady=10)
-        frame_buttons.pack(fill=tk.X)
-        # 读取数据按钮
-        tk.Button(frame_buttons, text="读取数据", command=self._load_data, font=("Arial", 12), width=15).pack(
-            side=tk.LEFT, padx=5)
-        # 排序物品组按钮
-        tk.Button(frame_buttons, text="排序物品组", command=self._sort_groups, font=("Arial", 12), width=15).pack(
-            side=tk.LEFT, padx=5)
-        # 求解最优解按钮
-        tk.Button(frame_buttons, text="求解最优解", command=self._solve_knapsack, font=("Arial", 12), width=15).pack(
-            side=tk.LEFT, padx=5)
-
-        # ========== 3. 导出按钮区域 ==========
-        frame_export = tk.Frame(self.root, padx=10, pady=10)
-        frame_export.pack(fill=tk.X)
-        # 导出TXT按钮
-        tk.Button(frame_export, text="导出为TXT", command=lambda: self._export_result('txt'), font=("Arial", 12),
-                  width=15).pack(side=tk.LEFT, padx=5)
-        # 导出Excel按钮
-        tk.Button(frame_export, text="导出为Excel", command=lambda: self._export_result('excel'), font=("Arial", 12),
-                  width=15).pack(side=tk.LEFT, padx=5)
-
-        # ========== 4. 结果显示区域 ==========
-        frame_result = tk.Frame(self.root, padx=10, pady=10)
-        frame_result.pack(fill=tk.BOTH, expand=True)
-        tk.Label(frame_result, text="求解结果：", font=("Arial", 12, "bold")).pack(anchor=tk.W)
-        # 结果文本框
-        self.result_text = tk.Text(frame_result, font=("Arial", 12), wrap=tk.WORD)
-        self.result_text.pack(fill=tk.BOTH, expand=True, pady=5)
-        # 滚动条
-        scrollbar = tk.Scrollbar(self.result_text)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.result_text.config(yscrollcommand=scrollbar.set)
-        scrollbar.config(command=self.result_text.yview)
-
-    def _select_file(self):
-        """选择数据文件（私有方法）"""
-        file_path = filedialog.askopenfilename(filetypes=[("文本文件", "*.txt"), ("所有文件", "*.*")])
-        if file_path:
-            self.file_path.set(file_path)
-
-    def _load_data(self):
-        """加载数据文件（私有方法）"""
-        file_path = self.file_path.get()
-        # 校验文件路径有效性
-        if not file_path or not os.path.exists(file_path):
-            messagebox.showwarning("警告", "请先选择有效的数据文件！")
+    # 加载数据
+    def load_data(self):
+        if not self.file_path.get():
+            messagebox.showwarning("提示", "请先选择数据文件")
             return
+        cap, groups = load_data(self.file_path.get())
+        if not groups:
+            messagebox.showerror("错误", "数据格式错误，请检查文件")
+            return
+        self.capacity = cap
+        self.groups = groups
+        self.result_box.delete(1.0, tk.END)
+        self.result_box.insert(tk.END, f"✅ 数据加载成功\n背包容量：{cap}\n物品组数：{len(groups)}\n每组3个物品")
 
-        # 调用数据加载器
-        capacity, groups = DataLoader.load_data(file_path)
-        if capacity and groups:
-            self.capacity.set(capacity)
-            self.groups = groups
-            # 清空结果框并显示加载成功信息
-            self.result_text.delete(1.0, tk.END)
-            self.result_text.insert(tk.END, f"✅ 数据加载成功！\n")
-            self.result_text.insert(tk.END, f"📦 背包容量：{capacity}\n")
-            self.result_text.insert(tk.END, f"📝 物品组数量：{len(groups)}\n")
-
-    def _sort_groups(self):
-        """排序物品组（私有方法）"""
+    # 排序物品组
+    def sort_groups(self):
         if not self.groups:
-            messagebox.showwarning("警告", "请先加载数据！")
+            messagebox.showwarning("提示", "请先加载数据")
             return
+        self.groups = sort_groups(self.groups)
+        self.result_box.delete(1.0, tk.END)
+        self.result_box.insert(tk.END, "✅ 已按每组第3个物品的价值/重量比降序排序")
 
-        # 调用排序方法
-        sorted_groups = KnapsackSolver.sort_by_third_ratio(self.groups)
-        self.groups = sorted_groups
-        # 显示排序成功信息
-        self.result_text.delete(1.0, tk.END)
-        self.result_text.insert(tk.END, f"✅ 排序完成！（按第三项价值/重量比降序）\n")
-
-    def _solve_knapsack(self):
-        """求解背包最优解（私有方法）"""
+    # 求解背包最优解
+    def solve(self):
         if not self.groups:
-            messagebox.showwarning("警告", "请先加载数据！")
+            messagebox.showwarning("提示", "请先加载数据")
             return
-
-        # 获取背包容量并调用求解方法
-        capacity = self.capacity.get()
-        max_value, selected, solve_time = KnapsackSolver.solve_dp(capacity, self.groups)
-
-        # 保存结果数据（用于导出）
-        self.result_data = {
-            'capacity': capacity,
-            'max_value': max_value,
-            'solve_time': solve_time,
-            'selected': selected
+        import time
+        start = time.time()
+        max_val, selected = solve_knapsack(self.capacity, self.groups)
+        cost = round(time.time() - start, 4)
+        self.result = {
+            "cap": self.capacity,
+            "max_val": max_val,
+            "selected": selected,
+            "time": cost
         }
+        self.result_box.delete(1.0, tk.END)
+        self.result_box.insert(tk.END, f"🎯 求解完成\n背包容量：{self.capacity}\n最大价值：{max_val}\n求解耗时：{cost} 秒\n\n选中物品：\n")
+        for g, idx in selected:
+            self.result_box.insert(tk.END, f"第{g}组 第{idx}个\n")
 
-        # 显示求解结果
-        self.result_text.delete(1.0, tk.END)
-        self.result_text.insert(tk.END, "🎯 求解结果\n")
-        self.result_text.insert(tk.END, "=" * 50 + "\n")
-        self.result_text.insert(tk.END, f"背包总容量：{capacity}\n")
-        self.result_text.insert(tk.END, f"最大价值：{max_value}\n")
-        self.result_text.insert(tk.END, f"求解时间：{solve_time} 秒\n")
-        self.result_text.insert(tk.END, f"选择方案：{selected}\n")
-
-    def _export_result(self, file_type):
-        """导出求解结果（私有方法）"""
-        if not self.result_data:
-            messagebox.showwarning("警告", "请先求解得到结果！")
+    # 导出TXT
+    def export_txt(self):
+        if not self.result:
+            messagebox.showwarning("提示", "请先求解最优解")
             return
+        path = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("文本文件", "*.txt")])
+        if not path:
+            return
+        if export_txt(self.result, path):
+            messagebox.showinfo("成功", "已导出为 TXT 文件")
+        else:
+            messagebox.showerror("失败", "导出 TXT 文件失败")
 
-        # 调用结果导出器
-        ResultExporter.export_result(self.result_data, file_type)
+    # 导出Excel
+    def export_excel(self):
+        if not self.result:
+            messagebox.showwarning("提示", "请先求解最优解")
+            return
+        path = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel 文件", "*.xlsx")])
+        if not path:
+            return
+        if export_excel(self.result, path):
+            messagebox.showinfo("成功", "已导出为 Excel 文件")
+        else:
+            messagebox.showerror("失败", "导出 Excel 文件失败，请检查是否安装 pandas：pip install pandas openpyxl")
 
+    # 打开散点图
+    def draw_plot(self):
+        if not self.groups:
+            messagebox.showwarning("提示", "请先加载数据")
+            return
+        draw_scatter(self.groups)
 
-# ===================== 程序入口 ====================
+# ===================== 程序入口 =====================
 if __name__ == "__main__":
-    # 创建TKinter根窗口
-    root = tk.Tk()
-    # 初始化应用
-    app = KnapsackGUI(root)
-    # 启动主循环
-    root.mainloop()
+    app = KnapsackApp()
+    app.mainloop()
